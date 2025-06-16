@@ -1,0 +1,65 @@
+package com.example.sessionlogger;
+
+import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.PlayerListEntry;
+
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.Timer;
+import java.util.TimerTask;
+
+@Environment(EnvType.CLIENT)
+public class SessionLoggerMod implements ClientModInitializer {
+
+    private long sessionStart;
+    private final String webhookUrl = "https://discord.com/api/webhooks/1384228540060270593/jcL9gwUyD09tBpZurgpRDy6x_Xhri1_ShDQCIgI5AOSHeLXDlYxNe1nU4fXU5-Ip-oOv";
+
+    @Override
+    public void onInitializeClient() {
+        sessionStart = System.currentTimeMillis();
+
+        Timer timer = new Timer();
+        timer.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+                sendStatsToDiscord();
+            }
+        }, 0, 600000); // 10 minutes
+    }
+
+    private void sendStatsToDiscord() {
+        MinecraftClient client = MinecraftClient.getInstance();
+
+        if (client.player == null || client.getNetworkHandler() == null) return;
+
+        int fps = client.getCurrentFps();
+        long sessionLengthMinutes = (System.currentTimeMillis() - sessionStart) / (60 * 1000);
+
+        PlayerListEntry playerEntry = client.getNetworkHandler().getPlayerListEntry(client.player.getUuid());
+        int ping = playerEntry != null ? playerEntry.getLatency() : -1;
+
+        String json = String.format("{\"content\": \"📊 **Session Report**\\n⏱️ Session Length: %d minutes\\n🎮 FPS: %d\\n📶 Ping: %d ms\"}", sessionLengthMinutes, fps, ping);
+
+        try {
+            URL url = new URL(webhookUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(json.getBytes());
+                os.flush();
+            }
+
+            conn.getInputStream().close(); // force request execution
+            conn.disconnect();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
